@@ -10,6 +10,7 @@ using PhotosApp.Clients;
 using PhotosApp.Clients.Models;
 using PhotosApp.Data;
 using PhotosApp.Models;
+using PhotosApp.Services.PasswordHasher;
 using Serilog;
 
 namespace PhotosApp
@@ -31,6 +32,7 @@ namespace PhotosApp
             services.Configure<PhotosServiceOptions>(configuration.GetSection("PhotosService"));
 
             var mvc = services.AddControllersWithViews();
+            services.AddRazorPages();
             if (env.IsDevelopment())
                 mvc.AddRazorRuntimeCompilation();
 
@@ -46,7 +48,7 @@ namespace PhotosApp
             //    o.UseSqlServer(@"Server=(localdb)\mssqllocaldb;Database=PhotosApp;Trusted_Connection=True;"));
 
             services.AddScoped<IPhotosRepository, LocalPhotosRepository>();
-
+            services.AddPasswordHasher();
             services.AddAutoMapper(cfg =>
             {
                 cfg.CreateMap<PhotoEntity, PhotoDto>().ReverseMap();
@@ -77,9 +79,12 @@ namespace PhotosApp
             app.UseSerilogRequestLogging();
 
             app.UseRouting();
+            app.UseAuthentication();
+            app.UseAuthorization();
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllerRoute("default", "{controller=Photos}/{action=Index}/{id?}");
+                endpoints.MapRazorPages();
             });
         }
     }

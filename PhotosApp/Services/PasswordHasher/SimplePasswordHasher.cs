@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using Microsoft.AspNetCore.Identity;
 using NUnit.Framework;
 
-namespace PhotosApp.Services
+namespace PhotosApp.Services.PasswordHasher
 {
     public class SimplePasswordHasher<TUser> : IPasswordHasher<TUser>
         where TUser : IdentityUser
@@ -25,13 +25,16 @@ namespace PhotosApp.Services
         public PasswordVerificationResult VerifyHashedPassword(TUser user,
             string hashedPassword, string providedPassword)
         {
-            byte[] expectedHashBytes = null;
-            byte[] actualHashBytes = null;
-
-            throw new NotImplementedException();
-
-            // Если providedPassword корректен, то в результате хэширования его с той же самой солью,
-            // что и оригинальный пароль, должен получаться тот же самый хэш.
+            var expectedHashBytes =  Convert.FromBase64String(hashedPassword);
+            var saltBytes = new byte[SaltSizeInBits / 8];
+            Buffer.BlockCopy(
+                expectedHashBytes, 0,
+                saltBytes, 0,
+                saltBytes.Length);
+            
+            var passwordHashBytes = GetHashBytes(providedPassword, saltBytes);
+            var actualHashBytes = ConcatenateBytes(saltBytes, passwordHashBytes);
+            
             return AreByteArraysEqual(actualHashBytes, expectedHashBytes)
                 ? PasswordVerificationResult.Success
                 : PasswordVerificationResult.Failed;
