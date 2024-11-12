@@ -14,6 +14,12 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Web;
 using IdentityModel.Client;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using MediaTypeHeaderValue = System.Net.Http.Headers.MediaTypeHeaderValue;
 
 namespace PhotosApp.Clients
@@ -22,11 +28,16 @@ namespace PhotosApp.Clients
     {
         private readonly string serviceUrl;
         private readonly IMapper mapper;
+        private readonly IHttpContextAccessor httpContextAccessor;
+        private readonly IConfigurationManager<OpenIdConnectConfiguration> oidcConfigurationManager;
 
-        public RemotePhotosRepository(IOptions<PhotosServiceOptions> options, IMapper mapper)
+        public RemotePhotosRepository(IOptions<PhotosServiceOptions> options, IMapper mapper,
+            IHttpContextAccessor httpContextAccessor, IConfigurationManager<OpenIdConnectConfiguration> oidcConfigurationManager)
         {
             serviceUrl = options.Value.ServiceUrl;
             this.mapper = mapper;
+            this.httpContextAccessor = httpContextAccessor;
+            this.oidcConfigurationManager = oidcConfigurationManager;
         }
 
         public async Task<IEnumerable<PhotoEntity>> GetPhotosAsync(string ownerId)
@@ -106,7 +117,7 @@ namespace PhotosApp.Clients
                     throw new UnexpectedStatusCodeException(response.StatusCode);
             }
         }
-        
+
         public async Task<bool> AddPhotoAsync(string title, string ownerId, byte[] content)
         {
             var request = new HttpRequestMessage();
@@ -187,6 +198,7 @@ namespace PhotosApp.Clients
 
         private Uri BuildUri(string path, string query = null)
             => new UriBuilder(serviceUrl) { Path = path, Query = query }.Uri;
+
         private string UrlEncode(object arg) => arg != null ? HttpUtility.UrlEncode(arg.ToString()) : null;
 
         private static ByteArrayContent SerializeToJsonContent(object obj)
@@ -200,11 +212,82 @@ namespace PhotosApp.Clients
 
         private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
         {
+            var httpContext = httpContextAccessor.HttpContext;
+            var oidcConfiguration = await oidcConfigurationManager.GetConfigurationAsync(httpContext.RequestAborted);
+            var issuerSigningKeys = oidcConfiguration.SigningKeys;
+
+            var accessToken = await httpContext.GetTokenAsync(OpenIdConnectParameterNames.AccessToken);
+            if (accessToken == null)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            var validationResult = await ValidateTokenAsync(accessToken, issuerSigningKeys);
+
+            if (!validationResult.IsValid)
+            {
+                var refreshToken = await httpContext.GetTokenAsync(OpenIdConnectParameterNames.RefreshToken);
+                if (refreshToken == null)
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                
+                accessToken = await RefreshAccessTokenAsync(refreshToken);
+            }
+            
             var httpClient = new HttpClient();
-            var token = await GetAccessTokenByClientCredentialsAsync();
-            httpClient.SetBearerToken(token);
+            request.SetBearerToken(accessToken);
             var response = await httpClient.SendAsync(request);
-            return response;
+            if (response.StatusCode != HttpStatusCode.Unauthorized)
+                return response;
+            
+
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        }
+
+        private async Task<string> RefreshAccessTokenAsync(string refreshToken)
+        {
+            var httpContext = httpContextAccessor.HttpContext;
+
+            // NOTE: получение конфигурации сервера авторизации
+            // NOTE: если исходный запрос будет отменен, то использование RequestAborted отменит запрос конфигурации
+            var oidcConfiguration = await oidcConfigurationManager.GetConfigurationAsync(httpContext.RequestAborted);
+
+            // NOTE: запрос токенов с помощью IdentityModel
+            var tokenResponse = await new HttpClient().RequestRefreshTokenAsync(new RefreshTokenRequest
+            {
+                Address = oidcConfiguration.TokenEndpoint,
+                ClientId = "Photos App by OIDC",
+                ClientSecret = "secret",
+                RefreshToken = refreshToken,
+            });
+
+            // NOTE: обновление access token и refresh token в аутентификационной cookie
+            // NOTE: Схему можно не указывать, потому что DefaultScheme подходит, DefaultAuthenticateScheme не задана
+            var authResult = await httpContext.AuthenticateAsync();
+            if (tokenResponse.RefreshToken != null)
+                authResult.Properties.UpdateTokenValue(OpenIdConnectParameterNames.RefreshToken, tokenResponse.RefreshToken);
+            if (tokenResponse.AccessToken != null)
+                authResult.Properties.UpdateTokenValue(OpenIdConnectParameterNames.AccessToken, tokenResponse.AccessToken);
+            // NOTE: Схему можно не указывать, потому что DefaultSignInScheme подходит
+            await httpContext.SignInAsync(authResult.Principal, authResult.Properties);
+
+            return tokenResponse.AccessToken;
+        }
+        
+        private async Task<TokenValidationResult> ValidateTokenAsync(string accessToken, ICollection<SecurityKey> issuerSigningKeys)
+        {
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero,
+                // NOTE: Переопределение проверки подписи токена, чтобы подпись не проверялась,
+                // ведь ее не получится проверить без закрытого ключа
+                SignatureValidator = (token, validationParameters) => new JsonWebToken(token),
+                IssuerSigningKeys = issuerSigningKeys,
+                RequireSignedTokens = true
+            };
+
+            var tokenHandler = new JsonWebTokenHandler();
+            var validationResult = tokenHandler.ValidateToken(accessToken, validationParameters);
+            return validationResult;
         }
         
         private static async Task<string> GetAccessTokenByClientCredentialsAsync()

@@ -24,17 +24,17 @@ namespace PhotosApp.Data
                     var env = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
                     if (env.IsDevelopment())
                     {
-                        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-                        roleManager.SeedWithSampleRolesAsync().Wait();
+                        // var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+                        // roleManager.SeedWithSampleRolesAsync().Wait();
                         scope.ServiceProvider.GetRequiredService<PhotosDbContext>().Database.Migrate();
-                        scope.ServiceProvider.GetRequiredService<UsersDbContext>().Database.Migrate();
-                        scope.ServiceProvider.GetRequiredService<TicketsDbContext>().Database.Migrate();
+                        // scope.ServiceProvider.GetRequiredService<UsersDbContext>().Database.Migrate();
+                        // scope.ServiceProvider.GetRequiredService<TicketsDbContext>().Database.Migrate();
                         var photosDbContext = scope.ServiceProvider.GetRequiredService<PhotosDbContext>();
-                        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<PhotosAppUser>>();
-                        var ticketManager = scope.ServiceProvider.GetRequiredService<TicketsDbContext>();
-                        ticketManager.SeedWithSampleTicketsAsync().Wait();
+                        // var userManager = scope.ServiceProvider.GetRequiredService<UserManager<PhotosAppUser>>();
+                        // var ticketManager = scope.ServiceProvider.GetRequiredService<TicketsDbContext>();
+                        // ticketManager.SeedWithSampleTicketsAsync().Wait();
                         photosDbContext.SeedWithSamplePhotosAsync().Wait();
-                        userManager.SeedWithSampleUsersAsync().Wait();
+                        // userManager.SeedWithSampleUsersAsync().Wait();
                         
                     }
                 }

@@ -15,7 +15,11 @@ namespace IdentityServer
             { 
                 new IdentityResources.OpenId(),
                 new IdentityResources.Profile(),
-                new IdentityResources.Email()
+                new IdentityResources.Email(),
+                new IdentityResource("photos_app", "Web Photos", new []
+                {
+                    "role", "subscription", "testing"
+                })
             };
 
         public static IEnumerable<ApiResource> Apis =>
@@ -23,14 +27,15 @@ namespace IdentityServer
             {
                 new ApiResource("photos_service", "Сервис фотографий")
                 {
-                    Scopes = { "photos" }
+                    Scopes = { "photos"},
+                    ApiSecrets = { new Secret("photos_service_secret".Sha256()) }
                 }
             };
 
         public static IEnumerable<ApiScope> ApiScopes =>
             new ApiScope[]
             {
-                new ApiScope("photos", "Фотографии")
+                new ApiScope("photos", "Фотографии"),
             };
         
         public static IEnumerable<Client> Clients =>
@@ -44,24 +49,29 @@ namespace IdentityServer
                     {
                         new Secret("secret".Sha256())
                     },
-                    AllowedScopes = { "photos" }
+                    AllowedScopes = { "photos" },
                 },
                 new Client
                 {
                     ClientId = "Photos App by OIDC",
+                    AccessTokenLifetime = 30,
+                    AllowOfflineAccess = true,
                     ClientSecrets = { new Secret("secret".Sha256()) },
 
                     AllowedGrantTypes = GrantTypes.Code,
                     
-                    RequireConsent = false,
+                    RequireConsent = true,
                     
-                    RedirectUris = { "https://localhost:5001/signin-passport" },
-
+                    RedirectUris = { "https://localhost:5001/signin-oidc" },
+                    PostLogoutRedirectUris = { "https://localhost:5001/signout-callback-passport" },
+                    
                     AllowedScopes = new List<string>
                     {
                         IdentityServerConstants.StandardScopes.OpenId,
                         IdentityServerConstants.StandardScopes.Profile,
-                        IdentityServerConstants.StandardScopes.Email
+                        IdentityServerConstants.StandardScopes.Email,
+                        "photos_app",
+                        "photos"
                     },
                     AlwaysIncludeUserClaimsInIdToken = true,
                 }

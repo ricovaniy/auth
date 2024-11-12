@@ -1,15 +1,20 @@
 ﻿using AutoMapper;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using PhotosApp.Areas;
 using PhotosApp.Clients;
 using PhotosApp.Clients.Models;
 using PhotosApp.Data;
 using PhotosApp.Models;
+using PhotosApp.Services.Authorization;
 using PhotosApp.Services.PasswordHasher;
 using Serilog;
 
@@ -29,8 +34,29 @@ namespace PhotosApp
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            const string oidcAuthority = "https://localhost:7001";
+            var oidcConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+                $"{oidcAuthority}/.well-known/openid-configuration",
+                new OpenIdConnectConfigurationRetriever(),
+                new HttpDocumentRetriever());
+            services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(oidcConfigurationManager);
+            
             services.Configure<PhotosServiceOptions>(configuration.GetSection("PhotosService"));
+            services.AddAuthentication(options =>
+                {
+                    options.DefaultSignInScheme = "Cookie";
+                    options.DefaultChallengeScheme = "Passport";
+                    options.DefaultScheme = "Cookie";
+                })
+                .AddCookie("Cookie", options =>
+                {
+                    options.Cookie.Name = "PhotosApp.Auth";
+                    options.LogoutPath = "/Passport/Logout";
+                })
+                .AddPassport(oidcAuthority, oidcConfigurationManager);
+            services.AddScoped<IAuthorizationHandler, MustOwnPhotoHandler>();
 
+            services.AddAuthorization1();
             var mvc = services.AddControllersWithViews();
             services.AddRazorPages();
             if (env.IsDevelopment())
@@ -85,7 +111,6 @@ namespace PhotosApp
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllerRoute("default", "{controller=Photos}/{action=Index}/{id?}");
-                endpoints.MapRazorPages();
             });
         }
     }

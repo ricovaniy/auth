@@ -1,8 +1,10 @@
 ﻿using System;
+using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
@@ -11,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using PhotosApp.Areas.Identity.Data;
 using PhotosApp.Services;
@@ -21,13 +25,11 @@ namespace PhotosApp.Areas
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddAuthorization(this IServiceCollection services)
+        public static IServiceCollection AddAuthorization1(this IServiceCollection services)
         {
             return services.AddAuthorization(o =>
             {
-                o.DefaultPolicy = new AuthorizationPolicyBuilder(
-                        JwtBearerDefaults.AuthenticationScheme,
-                        IdentityConstants.ApplicationScheme)
+                o.DefaultPolicy = new AuthorizationPolicyBuilder()
                     .RequireAuthenticatedUser()
                     .Build();
                 o.AddPolicy(
@@ -69,16 +71,6 @@ namespace PhotosApp.Areas
                 .AddDbContext<TicketsDbContext>(options =>
                     options.UseSqlite(
                         context.Configuration.GetConnectionString("TicketDbContextConnection")));
-        }
-
-        public static IServiceCollection AddManyAuthentications(this IServiceCollection services,
-            WebHostBuilderContext context)
-        {
-            services.AddAuthentication()
-                .AddBearer()
-                .AddGoogle(context)
-                .AddPassport();
-            return services;
         }
 
         public static IServiceCollection AddIdentity(this IServiceCollection services)
@@ -191,19 +183,57 @@ namespace PhotosApp.Areas
                 });
         }
 
-        private static AuthenticationBuilder AddPassport(this AuthenticationBuilder builder)
+        public static AuthenticationBuilder AddPassport(this AuthenticationBuilder builder, string oidcAuthority,
+            ConfigurationManager<OpenIdConnectConfiguration> oidcConfigurationManager)
         {
             return builder.AddOpenIdConnect("Passport", "Паспорт", options =>
             {
-                options.Authority = "https://localhost:7001/";
+                options.ConfigurationManager = oidcConfigurationManager;
+                options.Authority = oidcAuthority;
 
                 options.ClientId = "Photos App by OIDC";
                 options.ClientSecret = "secret";
                 options.ResponseType = "code";
-                
-                options.Scope.Add("email");
 
-                options.CallbackPath = "/signin-passport";
+                options.Scope.Add("email photos_app photos");
+                options.Scope.Add("offline_access");
+                options.SaveTokens = true;
+                options.Events = new OpenIdConnectEvents
+                {
+                    OnTokenResponseReceived = context =>
+                    {
+                        var tokenResponse = context.TokenEndpointResponse;
+                        var tokenHandler = new JwtSecurityTokenHandler();
+
+                        SecurityToken accessToken = null;
+                        if (tokenResponse.AccessToken != null)
+                        {
+                            accessToken = tokenHandler.ReadToken(tokenResponse.AccessToken);
+                        }
+
+                        SecurityToken idToken = null;
+                        if (tokenResponse.IdToken != null)
+                        {
+                            idToken = tokenHandler.ReadToken(tokenResponse.IdToken);
+                        }
+
+                        string refreshToken = null;
+                        if (tokenResponse.RefreshToken != null)
+                        {
+                            // NOTE: Это не JWT-токен
+                            refreshToken = tokenResponse.RefreshToken;
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                    OnRemoteFailure = context =>
+                    {
+                        context.Response.Redirect("/");
+                        context.HandleResponse();
+                        return Task.CompletedTask;
+                    }
+                };
+                options.SignedOutCallbackPath = "/signout-callback-passport";
 
                 // NOTE: все эти проверки токена выполняются по умолчанию, указаны для ознакомления
                 options.TokenValidationParameters.ValidateIssuer = true; // проверка издателя
