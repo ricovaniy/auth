@@ -74,6 +74,36 @@ namespace IdentityServer
                         "photos"
                     },
                     AlwaysIncludeUserClaimsInIdToken = true,
+                },
+                new Client
+                {
+                    ClientId = "Photos SPA",
+                    RequireClientSecret = false,
+                    RequirePkce = true,
+
+                    AllowedGrantTypes = GrantTypes.Code,
+                    
+                    RequireConsent = false,
+                    
+                    RedirectUris = { "https://localhost:8001/authentication/signin-passport" },
+                    
+                    PostLogoutRedirectUris = { "https://localhost:8001/authentication/signout-passport" },
+                    
+                    AllowedCorsOrigins = { "https://localhost:8001" },
+
+                    AllowedScopes = new List<string>
+                    {
+                        IdentityServerConstants.StandardScopes.OpenId,
+                        IdentityServerConstants.StandardScopes.Profile,
+                        IdentityServerConstants.StandardScopes.Email,
+                        "photos"
+                    },
+                    
+                    AlwaysIncludeUserClaimsInIdToken = true,
+                    
+                    AllowOfflineAccess = false,
+                    
+                    AccessTokenLifetime = 2*60,
                 }
             };
     }
